@@ -1,81 +1,177 @@
 # Opencode Mobile Compatible
 
-Run **OpenCode 1.18.30** inside Termux on an **x86_64 Android emulator** (MuMuPlayer),
-fully offline-capable install, total footprint **~282 MB** (under a 500 MB cap).
-
-> Real ARM phones: use the native `guysoft/opencode-termux` build instead.
-> This repo covers the rare **x86_64 + Termux** case (no community x64 assets exist),
-> solved with `proot` + Alpine + official `opencode-linux-x64-baseline-musl`.
+Run **OpenCode 1.18.30** (AI coding agent) inside **Termux** on an **x86_64 Android
+emulator** (MuMuPlayer) — total footprint **~282 MB** (under a 500 MB cap).
 
 ![OpenCode TUI running in Termux](sh_tui.png)
 
-## Verified environment
+> **Real ARM phones:** use the native [`guysoft/opencode-termux`](https://github.com/guysoft/opencode-termux)
+> build instead — one-line install, no proot needed.
+> This repo solves the rare **x86_64 + Termux** case, for which no community
+> assets exist, using `proot` + Alpine + the official
+> `opencode-linux-x64-baseline-musl` build.
 
-- Host: Windows, MuMuPlayer (Netease `MuMuNxMain`), emulator `emulator-5554`
-- Guest: Android 15, model SM-A235F, Termux arch **x86_64**, CPU without guest AVX2
-  (AMD EPYC host) → **baseline** build required
-- ADB: `D:\Program Files\Netease\MuMuPlayer\nx_main\adb.exe`
-- Termux APK: GitHub `github-debug` build (debuggable → `run-as com.termux` works)
+---
 
-## How it works
+## 1. Project understanding
 
-1. Termux base bootstrap (~78 MB, bundled in APK, works offline).
-2. Host downloads everything (guest has restricted network under `run-as`):
-   - `proot` + `libtalloc` + `libandroid-shmem` `.deb`s from Termux repo (x86_64)
-   - `alpine-minirootfs-3.24.1-x86_64.tar.gz` (~3.7 MB)
-   - `opencode-linux-x64-baseline-musl.tar.gz` v1.18.30 (~63 MB)
-   - `ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz` (~2.2 MB)
-   - Alpine `libgcc` + `libstdc++` `.apk`s (~1 MB, opencode needs them)
-3. `adb push` → `/data/local/tmp/` (`run-as` cannot read `/sdcard`, but can read
-   `/data/local/tmp`), then `run-as com.termux` copies into Termux and installs
-   with offline `dpkg -i` / `tar -xzf` (no `apt` network needed).
-4. Launch via `proot` (with `unset LD_PRELOAD` to avoid termux-exec conflict).
+**Goal:** a fully functional OpenCode terminal agent on a mobile-class Android
+environment (Termux), fitting in 500 MB, installed and operable without touching
+the emulator screen (headless via ADB).
 
-## Files
+**Why a custom method was needed:**
 
-| Path in Termux | Source script | Purpose |
+| Option | Verdict |
+|---|---|
+| Official `curl opencode.ai/install` / `npm i -g opencode-ai` | Linux glibc x64/arm64 only — no Android/Bionic build, fails on Termux |
+| `guysoft/opencode-termux` (native Bionic build) | **aarch64 only** — our Termux is x86_64 |
+| `Hope2333/opencode-termux` (glibc wrapper) | **aarch64 only**, needs glibc stack |
+| proot-distro + Debian + npm | Debian chroot + Node + 185 MB binary blows the 500 MB budget |
+| **This repo: proot + Alpine + musl-baseline binary** | ✅ ~282 MB total, verified working (TUI, serve, web, network) |
+
+**Result:** OpenCode TUI, `run`, `serve` (headless server on `127.0.0.1:4096`),
+`web` UI (HTTP 200 verified), `ripgrep`-powered file search, and working
+network (DNS + HTTPS) from the real app context.
+
+---
+
+## 2. Installation
+
+### 2.1 Prerequisites (host)
+
+- Windows + MuMuPlayer installed and running (emulator shows as `emulator-5554`)
+- ADB binary shipped with MuMu:
+  `D:\Program Files\Netease\MuMuPlayer\nx_main\adb.exe`
+- Termux **GitHub `github-debug` APK** (F-Droid/Play builds are not debuggable,
+  and headless access needs `run-as com.termux`):
+  `termux-app_v0.118.3+github-debug_x86_64.apk`
+
+### 2.2 Install Termux on the emulator
+
+```powershell
+$adb = "D:\Program Files\Netease\MuMuPlayer\nx_main\adb.exe"
+& $adb -s emulator-5554 install -r termux.apk
+& $adb -s emulator-5554 shell "monkey -p com.termux -c android.intent.category.LAUNCHER 1"
+# wait ~60s, then verify bootstrap finished:
+& $adb -s emulator-5554 shell "run-as com.termux ls /data/data/com.termux/files/usr/bin/bash"
+```
+
+### 2.3 Download packages (on the host — guest network is restricted, see §5.5)
+
+Termux x86_64 repo base: `https://packages-cf.termux.dev/apt/termux-main`
+
+| File | URL / source | Size |
 |---|---|---|
-| `~/alpine/` (~203 MB) | `scripts/setup-termux.sh` | Alpine rootfs + `/usr/local/bin/opencode` (186 MB) + `/usr/local/bin/rg` + `libgcc_s`/`libstdc++` + `etc/resolv.conf` |
-| `~/opencode` | `scripts/opencode-launcher.sh` | Launcher: proot + binds (`~/` → `/home/host`), passes args |
-| `~/alpine-sh` | `scripts/alpine-shell.sh` | Debug shell in the same proot |
-| `~/start-serve.sh` | `scripts/start-serve.sh` | Starts `opencode serve --port 4096` headless with log |
-| `~/.termux/termux.properties` | — | `allow-external-apps=true` (enables `RUN_COMMAND` automation) |
-| `$PREFIX` additions | `scripts/setup-termux.sh` | `proot`, `libtalloc`, `libandroid-shmem` (~1 MB) |
+| `proot_5.1.107.92_x86_64.deb` | `pool/main/p/proot/` | 107 KB |
+| `libtalloc_2.4.3_x86_64.deb` | `pool/main/libt/libtalloc/` | 33 KB |
+| `libandroid-shmem_0.7_x86_64.deb` | `pool/main/liba/libandroid-shmem/` | 7 KB |
+| `alpine-minirootfs-3.24.1-x86_64.tar.gz` | `https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/` | 3.7 MB |
+| `opencode-linux-x64-baseline-musl.tar.gz` | `https://github.com/sst/opencode/releases/download/v1.18.30/` | 63 MB |
+| `ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz` | `https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/` | 2.2 MB |
+| `libgcc-15.2.0-r5.apk`, `libstdc++-15.2.0-r5.apk` | `https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/` | ~1 MB |
 
-`scripts/install-libs.sh` extracts the Alpine C++ libs into the rootfs.
+> **baseline** (not the default build): the emulator guest does not expose AVX2
+> (`/proc/cpuinfo` shows none), so the AVX2 build would crash with illegal
+> instruction. **musl** (not glibc): matches Alpine, no glibc stack needed.
 
-## Storage (measured with `du -sh`, MiB)
+### 2.4 Push + install (offline, via `run-as`)
 
-- `$PREFIX`: 79 (base 78 + proot stack ~1)
-- `$HOME`: 203 (`~/alpine` 203: opencode 186 + rg 5.2 + libs ~3 + rootfs ~8)
-- **Total: ~282 / 500 cap (~218 free)**
-
-## Usage (inside Termux app)
-
-```bash
-./opencode --version   # 1.18.30
-./opencode             # TUI, then /connect to add an AI provider key
-./opencode run "explain this repo"
-~/start-serve.sh       # headless server on 127.0.0.1:4096 (log: ~/oc-serve.log)
+```powershell
+# stage through /data/local/tmp (run-as CANNOT read /sdcard, §5.6)
+& $adb -s emulator-5554 push <file> /data/local/tmp/
 ```
 
-Headless control from host (no typing needed):
+Then run [`scripts/setup-termux.sh`](scripts/setup-termux.sh) inside Termux
+(push it to `/data/local/tmp/` and execute
+`run-as com.termux /data/data/com.termux/files/usr/bin/sh /data/local/tmp/setup-termux.sh`).
+It does, offline:
+
+1. `dpkg -i` the three proot `.deb`s
+2. extracts Alpine to `~/alpine`
+3. extracts `opencode` → `~/alpine/usr/local/bin/opencode`
+4. extracts `rg` → `~/alpine/usr/local/bin/rg`
+5. writes `~/alpine/etc/resolv.conf` (`10.0.2.3`, `168.63.129.16`)
+6. installs [`scripts/install-libs.sh`](scripts/install-libs.sh) libs
+   (`libgcc_s.so.1`, `libstdc++.so.6` — opencode segfaults without them)
+
+Finish with:
 
 ```bash
-adb shell run-as com.termux am startservice --user 0 \
-  -n com.termux/com.termux.app.RunCommandService \
-  -a com.termux.RUN_COMMAND \
-  --es com.termux.RUN_COMMAND_PATH /data/data/com.termux/files/home/start-serve.sh \
-  --es com.termux.RUN_COMMAND_WORKDIR /data/data/com.termux/files/home \
-  --ez com.termux.RUN_COMMAND_BACKGROUND true
+mkdir -p ~/.termux && printf 'allow-external-apps=true\n' >> ~/.termux/termux.properties
+# copy scripts/opencode-launcher.sh -> ~/opencode, scripts/alpine-shell.sh -> ~/alpine-sh
+chmod 700 ~/opencode ~/alpine-sh
 ```
 
-## Known emulator quirks found
+### 2.5 Verify
 
-- `run-as` shell has no DNS/external TCP (SELinux context), but the real Termux
-  app process has full network (verified: `curl https://api.github.com/zen` OK,
-  and DNS+HTTPS work inside Alpine proot from app context).
-- Termux activity may open on a secondary display (`mumuscreen003`); target it
-  with `input -d <display-id>` and capture with `screencap -d <surfaceflinger-id>`.
-- Soft keyboard may report "view is not served" until the terminal window is
-  tapped/focused; `show_ime_with_hard_keyboard=1` helps.
+```bash
+./opencode --version   # → 1.18.30
+./opencode             # TUI (then /connect to add an AI provider key)
+~/start-serve.sh       # headless server → http://127.0.0.1:4096, log ~/oc-serve.log
+```
+
+---
+
+## 3. Working (architecture)
+
+```
+┌ Termux (Bionic, x86_64) ─────────────────────────────┐
+│  ~/opencode  ──►  proot ──►  ~/alpine/ (Alpine,musl)  │
+│                     │         ├─ usr/local/bin/opencode (musl-baseline, 186 MB)
+│                     │         ├─ usr/local/bin/rg (musl, 5 MB)
+│                     │         └─ usr/lib/libstdc++.so.6, libgcc_s.so.1
+│                     ├─ binds: /dev /proc /sys,  ~/ → /home/host
+│                     └─ unset LD_PRELOAD (else termux-exec breaks guest exec)
+└──────────────────────────────────────────────────────┘
+         ▲
+ host: adb push → /data/local/tmp → run-as com.termux
+       am RUN_COMMAND (background scripts, app context = full network)
+```
+
+- **No Node/Bun at runtime**: `bun build --compile` embeds the runtime in the
+  single binary; only musl + C++ libs are needed.
+- **Headless control** (no screen typing): Termux `RunCommandService`
+  (`com.termux.RUN_COMMAND`, `BACKGROUND=true`) after setting
+  `allow-external-apps=true` + app restart.
+- **Storage** (`du -sh`, MiB): `$PREFIX` 79 (base 78 + proot ~1) + `$HOME` 203
+  (`~/alpine`: opencode 186 + rg 5.2 + libs ~3 + rootfs ~8) = **~282 / 500**.
+
+---
+
+## 4. Uses
+
+- Interactive AI coding inside Termux: `./opencode` (TUI), `/connect` for
+  Anthropic/OpenAI keys, `tab` agents, `ctrl+p` commands.
+- Non-interactive: `./opencode run "explain this repo"`.
+- Headless HTTP: `opencode serve --port 4096` (+ `web` UI, verified HTTP 200).
+- File search/edit via bundled musl `ripgrep`.
+- Project files live in Termux `~/`, visible inside Alpine at `/home/host`.
+
+---
+
+## 5. Problems faced → fixes
+
+| # | Problem | Root cause | Fix |
+|---|---|---|---|
+| 1 | `adb` not recognized; two adb servers fight (device `offline`) | MuMu ships its own adb; PATH adb missing/version clash | Use one binary everywhere: `MuMuPlayer\nx_main\adb.exe` |
+| 2 | No official/community build runs | No Android build upstream; community builds are aarch64-only; Termux here is x86_64 | Custom stack: proot + Alpine + official `linux-x64-baseline-musl` |
+| 3 | Risk of illegal-instruction crash | Guest `/proc/cpuinfo` has no AVX2 (AMD EPYC host) | Use the **baseline** variant |
+| 4 | `opencode: libstdc++.so.6: No such file` | Bun-compiled binary dynamically links C++ stdlib; minirootfs lacks it | Extract Alpine `libgcc`+`libstdc++` `.apk`s into rootfs (`scripts/install-libs.sh`) |
+| 5 | `apt update` fails in Termux (`Could not resolve host`) | `run-as` debugging context has no DNS/external TCP (SELinux), though shell UID resolves fine | **Host-assisted offline install**: download on host, `adb push`, offline `dpkg -i`/`tar` |
+| 6 | `run-as cat /sdcard/...` → Permission denied | `run-as` has no `/sdcard` access by design | Stage via `/data/local/tmp` (world-readable, `run-as` can read) |
+| 7 | Proot fails: `execve("/usr/bin/env"): No such file` + termux-exec hint | `LD_PRELOAD=libtermux-exec.so` rewrites guest paths | `unset LD_PRELOAD` before every `proot` call |
+| 8 | Commands with `$PREFIX` arrive broken/empty | PowerShell interpolates `$...` before adb sees it | Never inline `$` vars — write **script files**, push, execute |
+| 9 | Pushed `.sh` files would break on Termux | Windows git `core.autocrlf` → CRLF (`bad interpreter`) | `.gitattributes`: `*.sh text eol=lf` + `git add --renormalize` (verified `i/lf`) |
+| 10 | Termux opens on wrong screen; screenshots show launcher | MuMu exposes 3 displays (`mumuscreen000/002/003`); Termux lands on secondary | Target it: `input -d <logical-id>`, `screencap -d <surfaceflinger-id>` (Termux found on `mumuscreen003`) |
+| 11 | Typing does nothing in Termux window | No focused window (`FocusedWindows` empty); MuMu game-keymapping eats keys; IME "view is not served" | Tap terminal to focus; disable MuMu keymapping; `settings put secure show_ime_with_hard_keyboard 1` (only Sogou IME ships — use EN mode or install Gboard) |
+| 12 | Is network really OK for API calls? | `run-as` network blocked, so headless tests lie | Verified from **app context** via `RUN_COMMAND`: Termux `curl api.github.com/zen` OK; inside Alpine: `nslookup` + HTTPS download OK |
+| 13 | Secret handling | PAT must never land in files/history | Auth via in-memory `http.extraHeader` per command, `credential.helper=` cleared, no token in repo; rotate any exposed token |
+
+---
+
+## 6. Verified environment
+
+- Host: Windows, MuMuPlayer (`MuMuNxMain`/`MuMuNxSVC`), `emulator-5554` / `127.0.0.1:7555`
+- Guest: Android 15 (SM-A235F), Termux v0.118.3 `github-debug` x86_64
+- OpenCode **1.18.30** — `--version`, `--help`, TUI on screen (see screenshot),
+  `serve` on 4096 (log `listening…`, `/proc/net/tcp` LISTEN, HTTP 200)
