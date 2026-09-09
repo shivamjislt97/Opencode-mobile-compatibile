@@ -274,3 +274,57 @@ Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/
 > PowerShell commands — PowerShell eats the `$`. Always ship logic in `.sh`
 > files and execute the file (that's why this repo is script-based).
 > Keep `.sh` files LF-only (`.gitattributes` handles it).
+
+---
+
+## 8. Android phone (ARM) method — emulator NOT needed
+
+Real phones are **aarch64**, so use the **native** community build (no proot,
+no Alpine, no host PC needed). Everything runs **inside Termux on the phone**.
+
+```bash
+# 0. Termux install: F-Droid (https://f-droid.org/en/packages/com.termux)
+#    ya GitHub releases se. PLAY STORE wala mat lena (restrictions hain).
+#    App kholo, bootstrap hone do (1-2 min), phir Termux me:
+termux-setup-storage
+pkg update -y && pkg upgrade -y
+```
+
+```bash
+# 1. One-shot install (ye repo phone me clone karo ya script copy karke):
+bash scripts/install-phone.sh
+```
+
+`install-phone.sh` ye karta hai: `curl jq unzip ripgrep` install →
+GitHub API se latest `guysoft/opencode-termux` `_aarch64.deb` ka URL nikalta hai →
+download → `dpkg -i` → `opencode --version` + `rg --version` verify.
+
+Manual (script ke bina):
+
+```bash
+pkg install -y curl jq unzip ripgrep
+DEB_URL=$(curl -s https://api.github.com/repos/guysoft/opencode-termux/releases/latest | jq -r '.assets[] | select(.name | endswith("_aarch64.deb")) | .browser_download_url')
+curl -LO "$DEB_URL"
+dpkg -i "$(basename "$DEB_URL")"
+opencode --version
+```
+
+```bash
+# 2. Chalao + API key:
+opencode
+# andar: /connect  →  Anthropic/OpenAI key add karo, coding shuru
+```
+
+**Notes (phone):**
+
+- Storage: bootstrap ~150MB + opencode ~180MB = **~330MB**.
+- Ye build upstream se thoda peeche ho sakta hai (community-maintained).
+  Naya version chahiye to alternative: [`Hope2333/opencode-termux`](https://github.com/Hope2333/opencode-termux)
+  (glibc wrapper, aarch64 only):
+  ```bash
+  apt install -y glibc-repo && apt update && apt install -y glibc openssl-glibc
+  # phir us repo ke releases se opencode_*_aarch64.deb download karke:
+  dpkg -i opencode_*_aarch64.deb
+  opencode --version
+  ```
+- Emulator wala Section 7 phone pe **kaam nahi karega** (wo x86_64+musl build hai).
