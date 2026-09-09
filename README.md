@@ -328,3 +328,56 @@ opencode
   opencode --version
   ```
 - Emulator wala Section 7 phone pe **kaam nahi karega** (wo x86_64+musl build hai).
+
+---
+
+## 9. Sirf Termux app se install (koi PC / adb / PowerShell nahi)
+
+Neeche wali **saari commands Termux app ke andar** likhni hain — ek-ek karke.
+(Is repo ke `adb`/`Invoke-WebRequest` wale blocks ko Termux me **mat** chalana —
+wo PC ke liye hain.)
+
+### 9A. Real phone (ARM) — Termux only
+
+```bash
+pkg update -y && pkg upgrade -y
+pkg install -y git
+git clone https://github.com/shivamjislt97/Opencode-mobile-compatibile.git
+cd Opencode-mobile-compatibile
+bash scripts/install-phone.sh
+```
+
+Khatam. Phir:
+
+```bash
+opencode
+```
+
+### 9B. Emulator Termux, x86_64 (MuMu) — Termux only
+
+(App ke andar internet chalta hai, isliye PC ki zaroorat nahi.)
+
+```bash
+pkg update -y && pkg upgrade -y
+pkg install -y git
+git clone https://github.com/shivamjislt97/Opencode-mobile-compatibile.git
+cd Opencode-mobile-compatibile
+bash scripts/install-emulator.sh
+```
+
+`install-emulator.sh` khud karta hai: `proot curl tar` install → saare
+tarballs download → `~/alpine` extract → opencode + rg + libs → resolv.conf →
+cleanup (~70 MB downloads delete) → size report. Phir:
+
+```bash
+cp scripts/opencode-launcher.sh ~/opencode
+cp scripts/alpine-shell.sh ~/alpine-sh
+chmod 700 ~/opencode ~/alpine-sh
+cd ~
+./opencode --version
+./opencode
+```
+
+> Typing na ho to: terminal me tap karke focus lao, MuMu keymapping OFF karo
+> (§5.11). Commands ko **ek-ek karke** likho/chalao — poora block ek saath
+> paste karne se `&`/special-char errors aate hain.
