@@ -175,3 +175,102 @@ chmod 700 ~/opencode ~/alpine-sh
 - Guest: Android 15 (SM-A235F), Termux v0.118.3 `github-debug` x86_64
 - OpenCode **1.18.30** — `--version`, `--help`, TUI on screen (see screenshot),
   `serve` on 4096 (log `listening…`, `/proc/net/tcp` LISTEN, HTTP 200)
+
+---
+
+## 7. Complete copy-paste commands (host PowerShell)
+
+Run these in order on the Windows host. Replace `emulator-5554` with your
+serial from `adb devices` if different. Assumes this repo is cloned and your
+PowerShell is opened **inside the repo folder**.
+
+```powershell
+# 0. ADB (MuMu's own binary — use it for every command)
+$adb = "D:\Program Files\Netease\MuMuPlayer\nx_main\adb.exe"
+& $adb devices -l
+```
+
+```powershell
+# 1. Termux APK (GitHub debug build = headless-able) + install + first launch
+Invoke-WebRequest -Uri "https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_x86_64.apk" -OutFile "termux.apk"
+& $adb -s emulator-5554 install -r termux.apk
+& $adb -s emulator-5554 shell "monkey -p com.termux -c android.intent.category.LAUNCHER 1"
+# wait ~60s, repeat until it prints the bash path (bootstrap done):
+& $adb -s emulator-5554 shell "run-as com.termux ls /data/data/com.termux/files/usr/bin/bash"
+```
+
+```powershell
+# 2. Download everything on the host (guest net is restricted under run-as)
+$base = "https://packages-cf.termux.dev/apt/termux-main"
+Invoke-WebRequest -Uri "$base/pool/main/p/proot/proot_5.1.107.92_x86_64.deb" -OutFile "proot.deb"
+Invoke-WebRequest -Uri "$base/pool/main/libt/libtalloc/libtalloc_2.4.3_x86_64.deb" -OutFile "libtalloc.deb"
+Invoke-WebRequest -Uri "$base/pool/main/liba/libandroid-shmem/libandroid-shmem_0.7_x86_64.deb" -OutFile "libandroid-shmem.deb"
+Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/alpine-minirootfs-3.24.1-x86_64.tar.gz" -OutFile "alpine.tar.gz"
+Invoke-WebRequest -Uri "https://github.com/sst/opencode/releases/download/v1.18.30/opencode-linux-x64-baseline-musl.tar.gz" -OutFile "opencode-musl.tar.gz"
+Invoke-WebRequest -Uri "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15.2.0-x86_64-unknown-linux-musl.tar.gz" -OutFile "rg-musl.tar.gz"
+Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libgcc-15.2.0-r5.apk" -OutFile "libgcc.apk"
+Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libstdc%2B%2B-15.2.0-r5.apk" -OutFile "libstdcpp.apk"
+```
+
+```powershell
+# 3. Push to /data/local/tmp (run-as CANNOT read /sdcard — do NOT use /sdcard)
+& $adb -s emulator-5554 push proot.deb /data/local/tmp/
+& $adb -s emulator-5554 push libtalloc.deb /data/local/tmp/
+& $adb -s emulator-5554 push libandroid-shmem.deb /data/local/tmp/
+& $adb -s emulator-5554 push alpine.tar.gz /data/local/tmp/
+& $adb -s emulator-5554 push opencode-musl.tar.gz /data/local/tmp/
+& $adb -s emulator-5554 push rg-musl.tar.gz /data/local/tmp/
+& $adb -s emulator-5554 push libgcc.apk /data/local/tmp/
+& $adb -s emulator-5554 push libstdcpp.apk /data/local/tmp/
+& $adb -s emulator-5554 push scripts\setup-termux.sh /data/local/tmp/
+& $adb -s emulator-5554 push scripts\install-libs.sh /data/local/tmp/
+& $adb -s emulator-5554 push scripts\opencode-launcher.sh /data/local/tmp/
+& $adb -s emulator-5554 push scripts\alpine-shell.sh /data/local/tmp/
+& $adb -s emulator-5554 push scripts\finish-install.sh /data/local/tmp/
+& $adb -s emulator-5554 push scripts\start-serve.sh /data/local/tmp/
+```
+
+```powershell
+# 4. Install inside Termux (each prints DONE on success)
+& $adb -s emulator-5554 shell "run-as com.termux /data/data/com.termux/files/usr/bin/sh /data/local/tmp/setup-termux.sh"
+& $adb -s emulator-5554 shell "run-as com.termux /data/data/com.termux/files/usr/bin/sh /data/local/tmp/install-libs.sh"
+& $adb -s emulator-5554 shell "run-as com.termux /data/data/com.termux/files/usr/bin/sh /data/local/tmp/finish-install.sh"
+# expected: ./opencode --version → 1.18.30, sizes $PREFIX 79M + $HOME ~203M
+```
+
+```powershell
+# 5. Cleanup staging (~70 MB) from the device
+& $adb -s emulator-5554 shell "rm -f /data/local/tmp/proot.deb /data/local/tmp/libtalloc.deb /data/local/tmp/libandroid-shmem.deb /data/local/tmp/alpine.tar.gz /data/local/tmp/opencode-musl.tar.gz /data/local/tmp/rg-musl.tar.gz /data/local/tmp/libgcc.apk /data/local/tmp/libstdcpp.apk /data/local/tmp/*.sh"
+```
+
+```powershell
+# 6. Start headless server from host (no screen typing needed)
+& $adb -s emulator-5554 shell "run-as com.termux /data/data/com.termux/files/usr/bin/sh -c 'cp /data/local/tmp/start-serve.sh /data/data/com.termux/files/home/start-serve.sh; chmod 700 /data/data/com.termux/files/home/start-serve.sh'"
+& $adb -s emulator-5554 shell "run-as com.termux am startservice --user 0 -n com.termux/com.termux.app.RunCommandService -a com.termux.RUN_COMMAND --es com.termux.RUN_COMMAND_PATH /data/data/com.termux/files/home/start-serve.sh --es com.termux.RUN_COMMAND_WORKDIR /data/data/com.termux/files/home --ez com.termux.RUN_COMMAND_BACKGROUND true"
+# verify (log + LISTEN + HTTP 200):
+& $adb -s emulator-5554 shell "run-as com.termux /data/data/com.termux/files/usr/bin/head -5 /data/data/com.termux/files/home/oc-serve.log"
+& $adb -s emulator-5554 shell "grep -i ':1000' /proc/net/tcp"
+& $adb -s emulator-5554 shell "printf 'GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n' | toybox nc -w 6 127.0.0.1 4096 | head -2"
+```
+
+```powershell
+# 7. Screen control (Termux lives on a secondary MuMu display)
+& $adb -s emulator-5554 shell "dumpsys SurfaceFlinger --display-id | grep -i mumuscreen"
+& $adb -s emulator-5554 shell "screencap -p -d <SURFACEFLINGER_ID> /sdcard/screen.png"
+& $adb -s emulator-5554 pull /sdcard/screen.png screen.png
+# type into the Termux display (4 = Termux here; check dumpsys activity if unsure):
+& $adb -s emulator-5554 shell "input -d 4 tap 300 400"
+& $adb -s emulator-5554 shell "input -d 4 text './opencode%s--version'"
+& $adb -s emulator-5554 shell "input -d 4 keyevent 66"
+```
+
+```powershell
+# 8. Keyboard fix (if typing does nothing in Termux)
+& $adb -s emulator-5554 shell "settings put secure show_ime_with_hard_keyboard 1"
+# + tap inside the terminal to focus it, + turn OFF MuMu toolbar keymapping
+```
+
+> ⚠️ Do **not** inline `$PREFIX`/`$HOME` in `adb shell "..."` double-quoted
+> PowerShell commands — PowerShell eats the `$`. Always ship logic in `.sh`
+> files and execute the file (that's why this repo is script-based).
+> Keep `.sh` files LF-only (`.gitattributes` handles it).
