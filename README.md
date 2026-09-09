@@ -5,6 +5,43 @@ emulator** (MuMuPlayer) — total footprint **~282 MB** (under a 500 MB cap).
 
 ![OpenCode TUI running in Termux](sh_tui.png)
 
+## 0. Quick start — code first (Termux app ke andar, ek-ek karke chalao)
+
+### Phone (ARM) — verified ✅
+
+```bash
+pkg update -y && pkg upgrade -y
+pkg install -y git
+git clone https://github.com/shivamjislt97/Opencode-mobile-compatibile.git
+cd Opencode-mobile-compatibile
+bash scripts/install-phone.sh
+opencode
+```
+
+### Emulator Termux x86_64 (MuMu) — verified ✅
+
+```bash
+pkg update -y && pkg upgrade -y
+pkg install -y git
+git clone https://github.com/shivamjislt97/Opencode-mobile-compatibile.git
+cd Opencode-mobile-compatibile
+bash scripts/install-emulator.sh
+cp scripts/opencode-launcher.sh ~/opencode
+cp scripts/alpine-shell.sh ~/alpine-sh
+chmod 700 ~/opencode ~/alpine-sh
+cd ~
+./opencode --version
+./opencode
+```
+
+```bash
+# Phir TUI me: /connect  →  API key add karo, coding shuru
+```
+
+> Details neeche: §1 project samjho · §2-§4 emulator install/working/uses ·
+> §5 problems+fixes · §7 PC/adb commands · §8 phone detail · §9 Termux-only detail.
+> ⚠️ `adb`/`Invoke-WebRequest` wale blocks PC ke liye hain — Termux me mat chalana.
+
 > **Real ARM phones:** use the [`Hope2333/opencode-termux`](https://github.com/Hope2333/opencode-termux)
 > glibc build (§8) — verified working on a real phone. (The `guysoft` native
 > build prints only Bun help on some Android 15 devices — known issue, §5.14.)
