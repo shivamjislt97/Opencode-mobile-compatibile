@@ -5,8 +5,9 @@ emulator** (MuMuPlayer) — total footprint **~282 MB** (under a 500 MB cap).
 
 ![OpenCode TUI running in Termux](sh_tui.png)
 
-> **Real ARM phones:** use the native [`guysoft/opencode-termux`](https://github.com/guysoft/opencode-termux)
-> build instead — one-line install, no proot needed.
+> **Real ARM phones:** use the [`Hope2333/opencode-termux`](https://github.com/Hope2333/opencode-termux)
+> glibc build (§8) — verified working on a real phone. (The `guysoft` native
+> build prints only Bun help on some Android 15 devices — known issue, §5.14.)
 > This repo solves the rare **x86_64 + Termux** case, for which no community
 > assets exist, using `proot` + Alpine + the official
 > `opencode-linux-x64-baseline-musl` build.
@@ -24,8 +25,8 @@ the emulator screen (headless via ADB).
 | Option | Verdict |
 |---|---|
 | Official `curl opencode.ai/install` / `npm i -g opencode-ai` | Linux glibc x64/arm64 only — no Android/Bionic build, fails on Termux |
-| `guysoft/opencode-termux` (native Bionic build) | **aarch64 only** — our Termux is x86_64 |
-| `Hope2333/opencode-termux` (glibc wrapper) | **aarch64 only**, needs glibc stack |
+| `guysoft/opencode-termux` (native Bionic build) | **aarch64 only** — our Termux is x86_64; plus v0.2.1/tagfix29 print only Bun help on some Android 15 (broken graft, §5.14) |
+| `Hope2333/opencode-termux` (glibc wrapper) | ✅ **verified on real phone** (1.18.27) — needs glibc stack; the phone method (§8) |
 | proot-distro + Debian + npm | Debian chroot + Node + 185 MB binary blows the 500 MB budget |
 | **This repo: proot + Alpine + musl-baseline binary** | ✅ ~282 MB total, verified working (TUI, serve, web, network) |
 
@@ -166,6 +167,7 @@ chmod 700 ~/opencode ~/alpine-sh
 | 11 | Typing does nothing in Termux window | No focused window (`FocusedWindows` empty); MuMu game-keymapping eats keys; IME "view is not served" | Tap terminal to focus; disable MuMu keymapping; `settings put secure show_ime_with_hard_keyboard 1` (only Sogou IME ships — use EN mode or install Gboard) |
 | 12 | Is network really OK for API calls? | `run-as` network blocked, so headless tests lie | Verified from **app context** via `RUN_COMMAND`: Termux `curl api.github.com/zen` OK; inside Alpine: `nslookup` + HTTPS download OK |
 | 13 | Secret handling | PAT must never land in files/history | Auth via in-memory `http.extraHeader` per command, `credential.helper=` cleared, no token in repo; rotate any exposed token |
+| 14 | guysoft builds print only Bun help (`1.2.13`) on Android 15 | Grafted module graph not loaded by Bun 1.2.13 runtime on some devices (bundle IS in binary — trailer + version strings verified on host; known [guysoft#16](https://github.com/guysoft/opencode-termux/issues/16)) | Use Hope2333 glibc-track build instead (§8, verified 1.18.27 on real phone) |
 
 ---
 
@@ -279,8 +281,9 @@ Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/
 
 ## 8. Android phone (ARM) method — emulator NOT needed
 
-Real phones are **aarch64**, so use the **native** community build (no proot,
-no Alpine, no host PC needed). Everything runs **inside Termux on the phone**.
+Real phones are **aarch64**. Verified working: **Hope2333 glibc-track build
+(OpenCode 1.18.27)** — no proot, no Alpine, no host PC. Everything runs
+**inside Termux on the phone**.
 
 ```bash
 # 0. Termux install: F-Droid (https://f-droid.org/en/packages/com.termux)
@@ -295,17 +298,18 @@ pkg update -y && pkg upgrade -y
 bash scripts/install-phone.sh
 ```
 
-`install-phone.sh` ye karta hai: `curl jq unzip ripgrep` install →
-GitHub API se latest `guysoft/opencode-termux` `_aarch64.deb` ka URL nikalta hai →
-download → `dpkg -i` → `opencode --version` + `rg --version` verify.
+`install-phone.sh` ye karta hai: `curl ripgrep` install → glibc runtime
+(`glibc-repo` + `glibc` + `openssl-glibc`) → Hope2333 Push260906
+`opencode_1.18.27_aarch64.deb` download → `dpkg -i` → verify
+(umeed: `1.18.27`, **not** `1.2.13`).
 
 Manual (script ke bina):
 
 ```bash
-pkg install -y curl jq unzip ripgrep
-DEB_URL=$(curl -s https://api.github.com/repos/guysoft/opencode-termux/releases/latest | jq -r '.assets[] | select(.name | endswith("_aarch64.deb")) | .browser_download_url')
-curl -LO "$DEB_URL"
-dpkg -i "$(basename "$DEB_URL")"
+pkg install -y curl ripgrep
+apt install -y glibc-repo && apt update && apt install -y glibc openssl-glibc
+curl -LO https://github.com/Hope2333/opencode-termux/releases/download/Push260906/opencode_1.18.27_aarch64.deb
+dpkg -i opencode_1.18.27_aarch64.deb
 opencode --version
 ```
 
@@ -317,16 +321,13 @@ opencode
 
 **Notes (phone):**
 
-- Storage: bootstrap ~150MB + opencode ~180MB = **~330MB**.
-- Ye build upstream se thoda peeche ho sakta hai (community-maintained).
-  Naya version chahiye to alternative: [`Hope2333/opencode-termux`](https://github.com/Hope2333/opencode-termux)
-  (glibc wrapper, aarch64 only):
-  ```bash
-  apt install -y glibc-repo && apt update && apt install -y glibc openssl-glibc
-  # phir us repo ke releases se opencode_*_aarch64.deb download karke:
-  dpkg -i opencode_*_aarch64.deb
-  opencode --version
-  ```
+- Storage: bootstrap ~150MB + glibc stack ~100MB + opencode ~180MB ≈ **~430MB**.
+- ⚠️ `guysoft/opencode-termux` (v0.2.1, tagfix29) **is phone pe mat lena**:
+  install ho jata hai lekin `opencode` sirf Bun help dikhata hai (`1.2.13`).
+  Binary me bundle graft maujood hai (`---- Bun! ----` trailer + `1.17.9`
+  strings host pe verify kiye), lekin Android 15 pe runtime graft load nahi
+  karta — known issue ([guysoft#16](https://github.com/guysoft/opencode-termux/issues/16)).
+  Details §5.14.
 - Emulator wala Section 7 phone pe **kaam nahi karega** (wo x86_64+musl build hai).
 
 ---
