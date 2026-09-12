@@ -10,12 +10,9 @@ emulator** (MuMuPlayer) — total footprint **~282 MB** (under a 500 MB cap).
 ### Phone (ARM) — verified ✅
 
 ```bash
-pkg update -y && pkg upgrade -y
-pkg install -y git
-git clone https://github.com/shivamjislt97/Opencode-mobile-compatibile.git
-cd Opencode-mobile-compatibile
-bash scripts/install-phone.sh
-opencode
+curl -LO https://github.com/Hope2333/opencode-termux/releases/download/Push260906/opencode_1.18.27_aarch64.deb
+dpkg -i opencode_1.18.27_aarch64.deb
+opencode --version
 ```
 
 ### Emulator Termux x86_64 (MuMu) — verified ✅
